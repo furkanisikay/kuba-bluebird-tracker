@@ -1,0 +1,5 @@
+firmware/kuba_tracker_mvp/secrets.h
+firmware/kuba_tracker_mvp/*.pem
+firmware/kuba_tracker_mvp/cert.h
+firmware/kuba_tracker_mvp/build/
+*.bin
