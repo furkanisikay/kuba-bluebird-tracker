@@ -37,6 +37,7 @@ HTTPSServer *secureServer = nullptr;
 
 unsigned long lastFixMillis = 0;
 unsigned long sentenceCount = 0;
+unsigned long rawByteCount = 0;
 
 // ---- Web page ---------------------------------------------------------------
 const char INDEX_HTML[] PROGMEM = R"HTML(
@@ -74,6 +75,16 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
   <div class="stat"><div class="label">HDOP</div><div class="value" id="hdop">-</div></div>
   <div class="stat"><div class="label">Yon</div><div class="value" id="course">-</div></div>
   <div class="stat"><div class="label">Son fix</div><div class="value" id="age">-</div></div>
+</div>
+<div id="diag" style="padding:0 16px 16px">
+  <div style="font-size:12px;color:#8ea;opacity:.7;margin-bottom:6px">GPS bağlantı teşhisi (UART)</div>
+  <div id="panel2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+    <div class="stat"><div class="label">Ham bayt (UART)</div><div class="value" id="rawBytes">-</div></div>
+    <div class="stat"><div class="label">Cumle (NMEA)</div><div class="value" id="sentences">-</div></div>
+    <div class="stat"><div class="label">Checksum OK</div><div class="value" id="passedCk">-</div></div>
+    <div class="stat"><div class="label">Checksum HATA</div><div class="value" id="failedCk">-</div></div>
+  </div>
+  <div id="diagMsg" style="margin-top:10px;font-size:13px;padding:10px;border-radius:8px"></div>
 </div>
 <script>
 let map, marker;
@@ -114,6 +125,43 @@ async function poll() {
       document.getElementById('gmaps').href =
         'https://www.google.com/maps?q=' + d.lat + ',' + d.lon;
     }
+
+    document.getElementById('rawBytes').textContent = d.rawBytes;
+    document.getElementById('sentences').textContent = d.sentences;
+    document.getElementById('passedCk').textContent = d.passedChecksum;
+    document.getElementById('failedCk').textContent = d.failedChecksum;
+
+    const diag = document.getElementById('diagMsg');
+    if (d.rawBytes === 0) {
+      diag.style.background = '#3a1e1e';
+      diag.style.color = '#ffb3a3';
+      diag.textContent = 'SORUN: UART hattindan hic bayt gelmiyor. Kablolama ' +
+        '(RX/TX capraz mi?), SE100 besleme gerilimi (5V var mi, LED yaniyor mu?) ' +
+        've GPS_RX_PIN/GPS_TX_PIN pin numaralarini kontrol edin.';
+    } else if (d.sentences === 0 && d.rawBytes > 0) {
+      diag.style.background = '#3a2e1e';
+      diag.style.color = '#ffcf9e';
+      diag.textContent = 'SORUN: Bayt geliyor (' + d.rawBytes + ') ama gecerli NMEA ' +
+        'cumlesi yok. Baud hizi uyusmuyor olabilir (M8N=9600, M10~2023+=38400) ' +
+        'ya da UART lojik seviyesi hatali. Seri monitorde ilk baytlarin ham ' +
+        'halini kontrol edin.';
+    } else if (d.failedChecksum > d.passedChecksum) {
+      diag.style.background = '#3a2e1e';
+      diag.style.color = '#ffcf9e';
+      diag.textContent = 'SORUN: Cumleler geliyor ama checksum hatalari cok fazla ' +
+        '- baud hizi veya kablo/gurultu sorunu olabilir.';
+    } else if (!d.hasFix) {
+      diag.style.background = '#1e2a3a';
+      diag.style.color = '#9ecbff';
+      diag.textContent = 'UART calisiyor, cumleler geliyor (' + d.sentences +
+        '). Henuz uydu kilidi yok - acik havada birkac dakika bekleyin (soguk ' +
+        'baslangicta normal), anten yonu/gorus acisini kontrol edin.';
+    } else {
+      diag.style.background = '#1e3a24';
+      diag.style.color = '#9effb0';
+      diag.textContent = 'Her sey normal: GPS fix var, ' + d.sats + ' uydu, HDOP ' +
+        d.hdop.toFixed(1) + '.';
+    }
   } catch (e) {
     document.getElementById('status').textContent = 'baglanti hatasi: ' + e;
   }
@@ -145,6 +193,10 @@ void handleApiFix(HTTPRequest *req, HTTPResponse *res) {
   json += "\"hdop\":" + String(gps.hdop.isValid() ? gps.hdop.hdop() : 99.9, 2) + ",";
   json += "\"ageMs\":" + String(age) + ",";
   json += "\"sentences\":" + String(sentenceCount) + ",";
+  json += "\"rawBytes\":" + String(rawByteCount) + ",";
+  json += "\"charsProcessed\":" + String(gps.charsProcessed()) + ",";
+  json += "\"failedChecksum\":" + String(gps.failedChecksum()) + ",";
+  json += "\"passedChecksum\":" + String(gps.passedChecksum()) + ",";
   json += "\"ip\":\"" + WiFi.localIP().toString() + "\"";
   json += "}";
   res->print(json);
@@ -219,6 +271,16 @@ void setup() {
 void loop() {
   while (GPSSerial.available()) {
     char c = GPSSerial.read();
+    rawByteCount++;
+    if (rawByteCount <= 200) {
+      // Log the first raw bytes seen so we can tell "nothing at all" apart
+      // from "garbage" (wrong baud rate / logic level).
+      if (c >= 0x20 && c <= 0x7e) {
+        Serial.print(c);
+      } else {
+        Serial.printf("[%02X]", (uint8_t)c);
+      }
+    }
     if (gps.encode(c)) {
       sentenceCount++;
     }
@@ -233,11 +295,11 @@ void loop() {
   static unsigned long lastLog = 0;
   if (millis() - lastLog > 5000) {
     lastLog = millis();
-    Serial.printf("[GPS] fix=%s lat=%.6f lon=%.6f sats=%d hdop=%.1f cumleler=%lu\n",
+    Serial.printf("[GPS] fix=%s lat=%.6f lon=%.6f sats=%d hdop=%.1f cumleler=%lu ham_bayt=%lu\n",
       gps.location.isValid() ? "VAR" : "YOK",
       gps.location.lat(), gps.location.lng(),
       gps.satellites.isValid() ? gps.satellites.value() : 0,
       gps.hdop.isValid() ? gps.hdop.hdop() : 99.9,
-      sentenceCount);
+      sentenceCount, rawByteCount);
   }
 }
