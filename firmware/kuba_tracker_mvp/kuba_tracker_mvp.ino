@@ -25,8 +25,11 @@
 using namespace httpsserver;
 
 // ---- Config ---------------------------------------------------------------
-static const int GPS_RX_PIN = 18;   // Deneyap Mini pin wired to SE100 TX
-static const int GPS_TX_PIN = 17;   // Deneyap Mini pin wired to SE100 RX
+// Deneyap Mini'nin uzerinde silkscreen'de "RX"/"TX" yazan pinler GPIO44/GPIO43'e
+// karsilik geliyor (D0/D1) - resmi PDF pinout'u bu konuda hatali, kaynak
+// pins_arduino.h'den dogrulandi. D11/D12 (GPIO18/17) degil.
+static const int GPS_RX_PIN = 44;   // Deneyap Mini "RX" pini -> SE100 TX
+static const int GPS_TX_PIN = 43;   // Deneyap Mini "TX" pini -> SE100 RX
 static const uint32_t GPS_BAUD = 9600;
 
 HardwareSerial GPSSerial(1);
