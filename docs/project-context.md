@@ -61,3 +61,12 @@ Key verified decisions/facts:
   Gerçek Wi-Fi bilgileri (`secrets.h`) ve gerçek GPS kablolama pinleri
   (`GPS_RX_PIN`/`GPS_TX_PIN`) kullanıcıdan alınmayı bekliyor — bunlar
   olmadan HTTPS sunucusuna gerçek cihazdan bağlanıp test tamamlanamaz.
+- **Wi-Fi bağlantı sorunu tespit edildi (2026-07-11):** GPS pinleri ve Wi-Fi
+  bilgileri girildi, ama bağlantı sürekli `WL_CONNECT_FAILED` (status=4) ile
+  başarısız oluyor. Firmware'e eklenen tarama diagnostiği `NHWiFi` ağının
+  `enc=7` (WPA2/WPA3 karma mod) ile yayın yaptığını gösterdi. Bu ESP32-S2
+  nesli (deneyap:esp32 2.0.1 çekirdeği, eski IDF4.4 tabanlı WiFi yığını)
+  WPA3-SAE handshake'inde bilinen bir uyumsuzluğa sahip. **Çözüm: router
+  admin panelinden `NHWiFi` ağının güvenlik modu "WPA2-PSK only" yapılmalı**
+  (ya da ayrı bir 2.4GHz-only WPA2 IoT ağı açılmalı). Şifre doğru, sorun
+  protokol uyumsuzluğu.
