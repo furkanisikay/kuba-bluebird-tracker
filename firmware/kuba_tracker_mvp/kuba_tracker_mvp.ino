@@ -150,16 +150,31 @@ void handleApiFix(HTTPRequest *req, HTTPResponse *res) {
   res->print(json);
 }
 
+void scanWiFi() {
+  Serial.println("Etraftaki aglar taraniyor...");
+  int n = WiFi.scanNetworks();
+  if (n <= 0) {
+    Serial.println("  (hicbir ag bulunamadi)");
+  }
+  for (int i = 0; i < n; i++) {
+    Serial.printf("  [%d] SSID='%s' RSSI=%d ch=%d enc=%d %s\n",
+      i, WiFi.SSID(i).c_str(), WiFi.RSSI(i), WiFi.channel(i), WiFi.encryptionType(i),
+      WiFi.SSID(i) == String(WIFI_SSID) ? "<-- hedef" : "");
+  }
+}
+
 void connectWiFi() {
   WiFi.mode(WIFI_STA);
+  scanWiFi();
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.printf("WiFi'a baglaniliyor: %s", WIFI_SSID);
   unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED) {
     delay(300);
     Serial.print(".");
-    if (millis() - start > 20000) {
-      Serial.println("\nWiFi baglanamadi, yeniden deneniyor...");
+    if (millis() - start > 12000) {
+      Serial.printf("\nWiFi baglanamadi (status=%d), yeniden deneniyor...\n", WiFi.status());
+      scanWiFi();
       WiFi.disconnect();
       WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
       start = millis();
